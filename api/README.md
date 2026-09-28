@@ -1,16 +1,17 @@
 # Crypto Wallet API
 
-Node.js + Express 5 + PostgreSQL REST API for a simple crypto wallet: register a user, read a
-balance, top up, transfer between wallets, and read the reporting data the admin dashboard needs.
+NestJS + Prisma + PostgreSQL REST API for a simple crypto wallet: register a user, read a balance, top
+up, transfer between wallets, and read the reporting data the admin dashboard needs.
 
-Built as a plain Express application on purpose (no framework, no ORM): every query, index and lock
-is visible in the repository that owns it, which is what makes the money handling verifiable.
+The layering is deliberate: controllers only translate HTTP, services hold the rules, repositories own
+the SQL, and money moves through PostgreSQL transactions with row locks — which is what makes the money
+handling verifiable.
 
-- **Runtime:** Node.js ≥ 22.9 (developed on Node 24), ES modules
-- **Database:** PostgreSQL 16
-- **Dependencies:** `express`, `pg`, `jsonwebtoken`, `helmet`, `cors` — nothing else in production
-- **Tests:** 152 tests (`node:test`), split into unit tests without a database and integration tests
-  against real PostgreSQL
+- **Runtime:** Node.js ≥ 22.9 (developed on Node 24), CommonJS output
+- **Framework:** NestJS 12 (guards, pipes and the exception filter do the cross-cutting work)
+- **Database:** PostgreSQL 16 through Prisma 7 (`prisma-client` generator + `@prisma/adapter-pg`)
+- **Tests:** 156 tests — 106 unit tests (Jest, no database) and 50 integration tests (Jest + supertest
+  against real PostgreSQL), plus a 28-check smoke script
 
 ---
 
@@ -22,11 +23,15 @@ createdb wallet                       # the test database is created automatical
 
 cd api
 cp .env.example .env                  # set JWT_SECRET (openssl rand -hex 32) and ADMIN_PASSWORD
-npm install
-npm run migrate                       # applies src/db/migrations/*.sql, tracks them in schema_migrations
+npm install                           # `prisma generate` runs on install
+npm run migrate                       # applies prisma/migrations/* and records them in _prisma_migrations
 npm run seed                          # creates/refreshes the admin account used by the dashboard
 npm run dev                           # http://localhost:4000/api/v1
 ```
+
+Changing the schema: edit `prisma/schema.prisma` and run `npm run prisma:migrate`
+(`prisma migrate dev`), which writes a new SQL migration under `prisma/migrations/`. Deployments apply
+them with `npm run migrate` (`prisma migrate deploy`).
 
 Verify an installation (or a deployment) end to end:
 
@@ -57,15 +62,21 @@ in the code. The API refuses to boot if a required variable is missing or obviou
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | Runs the API (migrates + seeds on boot), `--env-file-if-exists=.env` |
-| `npm run dev` | Same with `node --watch` |
-| `npm run migrate` | Applies pending SQL migrations only |
-| `npm run seed` | Creates/refreshes the admin account only |
-| `npm test` | Unit tests — no database, ~1 s |
+| `npm start` | Runs the API (seeds the admin on boot), `nest start` |
+| `npm run dev` | Same in watch mode (`nest start --watch`) |
+| `npm run build` | Compiles to `dist/` (`nest build`) |
+| `npm run migrate` | Applies pending Prisma migrations (`prisma migrate deploy`) |
+| `npm run prisma:migrate` | Creates a migration from the current schema (`prisma migrate dev`) |
+| `npm run seed` | Creates/refreshes the admin account only, without serving |
+| `npm run typecheck` | `tsc --noEmit` over `src/` and `test/` |
+| `npm test` | Unit tests — no database, ~3 s |
 | `npm run test:integration` | Integration tests against real PostgreSQL (creates `wallet_test` if needed) |
 | `npm run test:all` | Both suites |
-| `npm run test:coverage` | Unit tests with coverage from the Node test runner |
+| `npm run test:coverage` | Unit tests with coverage |
 | `npm run smoke` | End-to-end checks against a running API (local or deployed) |
+
+> `npm test` runs Jest with `--experimental-vm-modules`. NestJS 12 ships ESM-only packages, and this
+> flag lets Jest's CommonJS module registry `require()` them; it is part of the script, not a manual step.
 
 ---
 
@@ -95,7 +106,10 @@ Every failure uses one shape, which keeps client error handling trivial:
 | 409 | `CONFLICT` | Username already taken |
 | 413 | `PAYLOAD_TOO_LARGE` | Body above the 16 kB limit |
 | 500 | `INTERNAL_ERROR` | Unexpected failure — logged with a stack, never exposed |
-| 503 | – | `/health` only: API up, database unreachable |
+| 503 | `SERVICE_UNAVAILABLE` | `/health` only: API up, database unreachable |
+
+Anything we raise deliberately is an `AppError` in `src/domain/errors.ts` and carries its own status and
+code; everything else is treated as a bug and reported as a generic 500 (`AllExceptionsFilter`).
 
 ### Authentication
 
@@ -140,7 +154,7 @@ curl -s -X POST http://localhost:4000/api/v1/transfer -H "Authorization: Bearer 
   -H 'Content-Type: application/json' -d '{"to_username":"bob","amount":200.25}' -i | head -1  # 204
 ```
 
-**Amount rules** (identical for topup and transfer, enforced in `src/domain/money.js`):
+**Amount rules** (identical for topup and transfer, enforced in `src/domain/money.ts`):
 
 * a JSON **number**, strictly greater than `0` and strictly less than `10,000,000`
   (so `9,999,999.99` is accepted and `10,000,000` is rejected),
@@ -212,82 +226,110 @@ query per row.
 
 ```
 api/
+├── prisma/
+│   ├── schema.prisma      the data model, the indexes and the CHECK constraints' source of truth
+│   └── migrations/        generated SQL, applied by `npm run migrate`
 ├── src/
-│   ├── config/            env.js (validated, the only reader of process.env), limits.js
-│   ├── domain/            errors.js, money.js, username.js, password.js   ← pure rules, no I/O
-│   ├── db/                pool.js, unit-of-work.js, migrate.js, seed-admin.js, migrations/*.sql
-│   ├── repositories/      user.repository.js, transaction.repository.js    ← SQL only
-│   ├── services/          auth / wallet / reporting / jwt / password       ← use cases
+│   ├── config/            configuration.ts (the only reader of process.env), config.module.ts, limits.ts
+│   ├── domain/            errors.ts, money.ts, username.ts, password.ts, ledger.ts   ← pure rules, no I/O
+│   ├── prisma/            prisma.service.ts (the client) and its global module
+│   ├── repositories/      user.repository.ts, transaction.repository.ts  ← queries only
+│   │                      unit-of-work.ts (transaction boundary), persistence.module.ts
+│   ├── modules/
+│   │   ├── auth/          service, controller, guards (JwtAuthGuard, RolesGuard), token + password
+│   │   │                  services, admin-seeder.service.ts
+│   │   ├── wallet/        wallet.service.ts (topup, transfer, balance), wallet.controller.ts
+│   │   ├── reporting/     reporting.service.ts (rankings, paged ledger), reporting.controller.ts
+│   │   └── health/        health.controller.ts — the database round trip an orchestrator needs
 │   ├── http/
-│   │   ├── validators/    request.js       ← shape of incoming requests (the trust boundary)
-│   │   ├── controllers/   one file per resource, thin: validate → service → serialise
-│   │   ├── middleware/    auth.js, error-handler.js
-│   │   ├── serializers/   outbound JSON shape (snake_case where the contract says so)
-│   │   └── routes/        the route table, versioned under /api/v1
-│   ├── container.js       composition root: builds repositories, services, controllers
-│   ├── app.js             Express wiring: security headers, CORS, JSON, routes, error handling
-│   └── server.js          process entry point: config → migrate → seed → listen → graceful stop
-├── scripts/smoke.js       end-to-end verification against a running server
-└── tests/                 unit/ (fakes, no database) and integration/ (real PostgreSQL)
+│   │   ├── dto/           parsers.ts + auth/wallet/reporting.dto.ts  ← incoming shape (the trust boundary)
+│   │   ├── pipes/         request-parse.pipe.ts — wires a parser into a controller parameter
+│   │   └── serializers/   outbound JSON shape (snake_case where the contract says so)
+│   ├── common/            types.ts, decorators (@Public, @Roles, @CurrentUser), the exception filter
+│   ├── testing/           in-memory repository doubles used by the unit tests
+│   ├── app.module.ts      composition root
+│   ├── bootstrap.ts       HTTP wiring (helmet, CORS, 16 kB body limit, prefix, filter) + startServer
+│   ├── main.ts            process entry point
+│   └── seed.ts            `npm run seed`
+├── test/                  integration suite (jest-e2e.json, real PostgreSQL) + helpers
+└── scripts/smoke.js       end-to-end verification against a running server
 ```
 
 The request flow is one direction only:
 
 ```
-HTTP → validator (shape) → controller (translate) → service (rules) → repository (SQL) → PostgreSQL
-                                                        ↘ unit of work (one transaction)
+HTTP → controller → dto parser (shape) → service (rules) → repository (SQL) → PostgreSQL
+                                             ↘ unit of work (one transaction, row locks)
 ```
 
-Dependencies point inwards: `domain` imports nothing, `services` never import `express` or `pg`, and
-only `container.js` and `server.js` know how the parts fit together. That is why the unit tests can
-exercise all the business rules with in-memory repositories, and why the integration tests can run the
-real thing without a single mock.
+Dependencies point inwards. `domain/` imports nothing but other domain files; services never run
+queries directly (repositories do); and only `app.module.ts`/`bootstrap.ts` know how the parts fit
+together. That is what lets the unit tests exercise every rule with in-memory repositories, and the
+integration tests run the real thing with no mocks at all.
+
+Cross-cutting concerns are handled once, by Nest, rather than per route:
+
+* **authentication is on by default** — `JwtAuthGuard` is registered as a global guard
+  (`APP_GUARD` in `AuthModule`), so a new route is protected unless it explicitly says `@Public()`;
+* **authorisation** — `RolesGuard` reads `@Roles(...)` metadata; the cross-wallet listing is the only
+  rule that depends on the *parameter* rather than the route, so it lives in `ReportingService`;
+* **errors** — `AllExceptionsFilter` is the single place that turns a thrown error into the documented
+  `{ error: { code, message, details? } }` body, and the only place that decides what gets logged
+  (5xx only: a 4xx is the caller's mistake and a degraded `/health` answer is a normal state);
+* **request validation** — the `dto/` parsers, attached with `ParseRequest(...)`, reject malformed
+  input as a 400 before any service or query runs.
+
 
 ### Data model
+
+Prisma owns the schema (`prisma/schema.prisma`), mapped onto the same tables the API always had:
 
 ```
 users                          transactions
 ─────                          ────────────
-id          BIGSERIAL PK       id           BIGSERIAL PK
+id          SERIAL PK          id           SERIAL PK
 username    TEXT UNIQUE (3-32) type         'topup' | 'transfer'
-password_hash TEXT NULL        from_user_id BIGINT NULL  → users(id)
-role        'user' | 'admin'   to_user_id   BIGINT NOT NULL → users(id)
+password_hash TEXT NULL        from_user_id INT NULL  → users(id)
+role        'user' | 'admin'   to_user_id   INT NOT NULL → users(id)
 balance     NUMERIC(20,2)      amount       NUMERIC(20,2)  (must be > 0)
             CHECK (balance>=0) created_at   TIMESTAMPTZ
 created_at / updated_at        CHECK: transfer has a sender, topup does not; sender ≠ recipient
 ```
 
-* `balance NUMERIC(20,2) CHECK (balance >= 0)` — "a wallet is never negative" is a database
-  invariant, not just application code.
+* `balance NUMERIC(20,2) CHECK (balance >= 0)` and the ledger's own constraints are added by the
+  migration (Prisma cannot express `CHECK`), so "a wallet is never negative" stays a database
+  invariant rather than only application code.
 * A ledger row is immutable and is written in the same transaction as the balance change.
 * Indexes: `(from_user_id, created_at DESC)`, `(to_user_id, created_at DESC)` for the two sides of a
-  wallet's history and `(type, from_user_id)` for the "top users" aggregate — the three access
-  patterns the API actually has, and no more.
-* Migrations are plain SQL files applied in name order and recorded in `schema_migrations`, each in
-  its own transaction and behind a Postgres advisory lock so two replicas cannot race on boot.
+  wallet's history and `(type, from_user_id)` for the "top users" aggregate — the three access patterns
+  the API actually has, and no more (declared as `@@index(...)` in the schema).
+* Money is `Decimal @db.Decimal(20, 2)`: exact decimal arithmetic in PostgreSQL *and* in TypeScript,
+  where Prisma hands over a `Decimal` (decimal.js) instead of a float.
 
 ### Concurrency and correctness
 
 The interesting part of a wallet API is not the CRUD, it is making sure two simultaneous requests
 cannot spend the same money:
 
-1. **One transaction per operation** (`db/unit-of-work.js`) — balance update and ledger insert commit
-   together, or not at all.
-2. **Row locks in a deterministic order** — a transfer locks both wallets with
-   `SELECT ... FOR UPDATE ORDER BY id` before reading any balance. Ordering by id is what prevents the
-   classic A→B / B→A deadlock (the pair always locks the lower id first, so one request simply waits).
-3. **A guarded update as the last line of defence** — `UPDATE users SET balance = balance + $1
-   WHERE id = $2 AND balance + $1::numeric >= 0`. Even if step 2 were bypassed by a later refactor,
-   Postgres would refuse to overdraw, and `CHECK (balance >= 0)` would refuse again.
-4. **Exact decimal arithmetic** — integer cents in the application, `NUMERIC(20,2)` in the database.
+1. **One transaction per operation** (`UnitOfWork.run`) — the balance update and the ledger insert
+   commit together, or not at all.
+2. **Row locks in a deterministic order** — `UserRepository.lockByIds` issues
+   `SELECT ... FOR UPDATE ORDER BY id` before any balance is read. Ordering by id is what prevents the
+   classic A→B / B→A deadlock: the pair is always locked lower id first, so one request simply waits.
+3. **The database refuses to overdraw** — balances only change through
+   `UPDATE users SET balance = balance + $delta` (`adjustBalance`, Prisma's `increment`), and
+   `CHECK (balance >= 0)` rejects the statement if a later refactor ever bypassed the check in step 2.
+4. **Exact decimal arithmetic** — amounts are validated as integer cents in the service,
+   `NUMERIC(20,2)` in the database, `Decimal` in between.
 5. **No query per row, ever** — the dashboard page, its total and its summary are three queries run
    concurrently; rankings are single grouped queries.
 
-`tests/integration/concurrency.test.js` proves it: 10 parallel transfers of 30.00 against a 100.00
-wallet produce exactly 3 successes and 7 `INSUFFICIENT_BALANCE` answers, the balance ends at 10.00, no
-wallet is ever negative, and every balance can be recomputed from the ledger alone. A second case
-fires opposite-direction transfers at the same two wallets and asserts that nothing fails with a
-deadlock error.
+
+`test/concurrency.e2e-spec.ts` proves it: 10 parallel transfers of 30.00 against a 100.00 wallet
+produce exactly 3 successes and 7 `INSUFFICIENT_BALANCE` answers, the balance ends at 10.00, no wallet
+is ever negative, and every balance can be recomputed from the ledger alone. A second case fires
+opposite-direction transfers at the same two wallets and asserts that nothing fails with a deadlock
+error.
 
 ### Design decisions worth knowing
 
@@ -296,6 +338,15 @@ deadlock error.
   that a token cannot be revoked before it expires, so lifetime is configuration (`JWT_EXPIRES_IN`)
   rather than a constant. A `jti` denylist is the next step if "log out everywhere" becomes a
   requirement.
+* **Authentication is deny-by-default.** The guard is global and routes opt out with `@Public()`, so a
+  forgotten decorator on a new controller produces a 401 rather than an open endpoint.
+* **The parsers are forms, not validators with a database.** Shape and format are checked before a
+  service runs; anything that needs a query (does this user exist?) or business meaning (is this
+  amount valid?) lives in the service, so each rule exists in exactly one place.
+* **Repositories take the client as an argument.** `TransactionRepository.findPageForUser(args, db)`
+  receives either the shared client or the transaction handle the caller is inside. That is how a
+  service composes several statements into one atomic unit without the repository knowing about
+  transactions.
 * **Topups are ledger entries too**, with `from_user_id = NULL`, so a wallet's history explains its
   balance exactly (`credits - debits = balance`, asserted in the test suite) instead of having an
   unexplained starting amount.
@@ -308,26 +359,30 @@ deadlock error.
   other endpoint as available to the wallet owner.
 * **`/health` touches the database**, so an orchestrator stops routing traffic to an instance that
   cannot serve it.
-* **Known limitations:** no rate limiting (put `express-rate-limit` or a reverse proxy at the edge —
-  the login endpoint is the obvious candidate), no refresh tokens, no cursor pagination (offset paging
-  is fine at this data size), and notifications are out of scope.
+* **Known limitations:** no rate limiting (put a reverse proxy or a Nest throttler at the edge — the
+  login endpoint is the obvious candidate), no refresh tokens, no cursor pagination (offset paging is
+  fine at this data size), and notifications are out of scope.
 
 ## Testing
 
 ```bash
-npm test                     # 102 unit tests — no database, ~1 s
+npm test                     # 106 unit tests — no database, ~3 s
 npm run test:integration     #  50 integration tests — real PostgreSQL
 npm run smoke                #  28 checks against a running server
 ```
 
-* **Unit tests** (`tests/unit/`) run every domain rule and service path against in-memory
-  repositories (`tests/helpers/fake-repositories.js`): amount bounds and decimal precision, duplicate
-  usernames, unknown recipients, self transfers, insufficient funds, error mapping, token handling
-  (expired, tampered, foreign-signed, wrong algorithm) and the admin permission rule.
-* **Integration tests** (`tests/integration/`) boot the real app through the real composition root on a
-  real database: migrations, registration, login, the 10,000,000 boundary, ledger/balance consistency,
-  search, filters, pagination, the admin view and the concurrency proofs above. The `wallet_test`
-  database is created automatically; point `TEST_DATABASE_URL` elsewhere when needed.
+* **Unit tests** (`src/**/*.spec.ts`) run every domain rule and service path against in-memory
+  repositories (`src/testing/fake-repositories.ts`) with no module wiring at all: amount bounds and
+  decimal precision, duplicate usernames, unknown recipients, self transfers, insufficient funds,
+  error mapping and logging, the request parsers, token handling (expired, tampered, foreign-signed,
+  wrong algorithm) and the admin permission rule.
+* **Integration tests** (`test/*.e2e-spec.ts`) boot the real application — the same `createApp()` the
+  server uses, with real guards, real filters and real Prisma — against a real database: the
+  documented status codes, registration and login, the 10,000,000 boundary, ledger/balance
+  consistency, search, filters, pagination, the admin view and the concurrency proofs above. The
+  `wallet_test` database is created and migrated automatically (`test/global-setup.ts`); point
+  `TEST_DATABASE_URL` elsewhere when needed. `DATABASE_URL` is overridden for the run, so the suite can
+  never touch a development database.
 
 ## Docker
 
@@ -340,8 +395,12 @@ docker run --rm -p 4000:4000 \
   wallet-api
 ```
 
-The image installs production dependencies only, runs as the unprivileged `node` user, and migrates
-plus seeds on boot, so a fresh database needs no manual step. From the repository root,
-`docker compose up --build` starts PostgreSQL and this image together.
+The image is a two-stage build: the first stage installs the toolchain, generates the Prisma client and
+compiles to `dist/`, the second copies only what the runtime needs and drops privileges to the
+unprivileged `node` user. It applies pending migrations (`prisma migrate deploy`) and then seeds the
+admin account on boot, so a fresh database needs no manual step — which is also why `prisma` is a
+production dependency. From the repository root, `docker compose up --build` starts PostgreSQL and this
+image together.
+
 
 

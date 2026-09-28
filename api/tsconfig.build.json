@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The app is built from src only, so `dist/main.js` is the entry point `nest start` expects
+    // (the base tsconfig also covers `test/`, which would push the output down to dist/src/).
+    "rootDir": "./src",
+    "declaration": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+}

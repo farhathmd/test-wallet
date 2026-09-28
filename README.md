@@ -4,14 +4,14 @@ A cryptocurrency wallet service with an admin dashboard, delivered as two applic
 
 ```
 Test/
-├── api/       Node.js 24 + Express 5 + PostgreSQL wallet REST API (JWT auth, unit + integration tests)
+├── api/       Node.js 24 + NestJS 12 + Prisma 7 + PostgreSQL wallet REST API (JWT auth, unit + integration tests)
 ├── react/     React 19 + TypeScript + Vite admin dashboard (Axios, Chart.js, Vitest/RTL)
 └── docker-compose.yml   PostgreSQL + API + built dashboard, one command to run everything
 ```
 
 | App | Docs | Stack |
 | --- | --- | --- |
-| `api/` | [api/README.md](api/README.md) | Node.js (ESM), Express 5, `pg`, `jsonwebtoken`, PostgreSQL 16, `node:test` |
+| `api/` | [api/README.md](api/README.md) | Node.js, NestJS 12, Prisma 7 (`@prisma/adapter-pg`), PostgreSQL 16, Jest + supertest |
 | `react/` | [react/README.md](react/README.md) | Vite, React 19, TypeScript, Axios, Chart.js, React Router, Vitest + Testing Library |
 
 ## Quick start (local development)
@@ -80,19 +80,21 @@ See the per-app READMEs for the full API reference, architecture notes, and desi
 
 ## Verification
 
-Every command below was run on this machine (Node 24.18, PostgreSQL 16 via Homebrew) against the code in
-this repository, in this order:
+Every command below was run on this machine (Node 24.18, PostgreSQL 16 via Homebrew, Docker 29) against
+the code in this repository, in this order:
 
 | # | Command | Result |
 | --- | --- | --- |
-| 1 | `cd api && npm test` | **102/102 unit tests pass**, ~1.3 s, no database required |
-| 2 | `cd api && npm run test:integration` | **50/50 integration tests pass** on real PostgreSQL (the `wallet_test` database was created automatically and migrated) |
-| 3 | `cd api && npm run migrate && npm run seed` | schema created, admin account seeded (idempotent) |
-| 4 | `cd api && npm run dev` then `npm run smoke` | API boots on `:4000`, **28/28 documented behaviours verified over HTTP** |
-| 5 | `cd react && npm test` | **19/19 dashboard tests pass** (login, table, filters, charts, states) |
-| 6 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
-| 7 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
-| 8 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
+| 1 | `cd api && npm test` | **106/106 unit tests pass**, ~3 s, no database required (Jest + ts-jest) |
+| 2 | `cd api && npm run test:integration` | **50/50 integration tests pass** on real PostgreSQL (the `wallet_test` database is created and migrated automatically) |
+| 3 | `cd api && npm run migrate && npm run seed` | Prisma migrations applied, admin account seeded (idempotent) |
+| 4 | `cd api && npm run build && node dist/main.js` then `npm run smoke` | API boots on `:4000`, **28/28 documented behaviours verified over HTTP** |
+| 5 | `cd api && npx tsc --noEmit` | type check clean for `src/` and `test/` |
+| 6 | `docker build -t wallet-api ./api` + run against a `postgres:16-alpine` container | image builds, `prisma migrate deploy` runs on boot, `/api/v1/health` answers `{"status":"ok","db":"up"}`, register returns 201 |
+| 7 | `cd react && npm test` | **19/19 dashboard tests pass** (login, table, filters, charts, states) |
+| 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
+| 9 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
+| 10 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
 
 What the smoke run covers end to end (against a live server, not a mock): health, register/login/duplicate
 username, missing and invalid tokens, topup boundaries (`9,999,999.99` accepted, `10,000,000` and `1.005`
@@ -141,7 +143,7 @@ git remote add origin <your-repo-url>   # then: git push -u origin main
 
 | Path | Contents |
 | --- | --- |
-| `api/` | Express API: config, domain rules, repositories, services, HTTP layer, SQL migrations, tests, Dockerfile |
+| `api/` | NestJS API: config, domain rules, modules (auth/wallet/reporting/health), Prisma schema + migrations, tests, Dockerfile |
 | `react/` | Vite dashboard: typed API client, hooks, components, pages, charts, tests, Dockerfile + nginx |
 | `docker-compose.yml` | PostgreSQL + API + dashboard, with health checks and build args |
 | `api/README.md`, `react/README.md` | API reference, architecture, design decisions, limitations |

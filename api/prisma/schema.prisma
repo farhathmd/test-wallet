@@ -1,0 +1,74 @@
+// Wallet schema.
+//
+// Design notes
+// * Money is `Decimal @db.Decimal(20, 2)` — exact decimal arithmetic inside Postgres, never floating
+//   point. Prisma maps it to its own `Decimal` (decimal.js) type, so arithmetic in TypeScript is
+//   exact as well.
+// * Balances live on the user row. "balance is never negative" is enforced twice: the generated
+//   migration adds a CHECK constraint, and every debit goes through a row lock plus a single
+//   `SET balance = balance + $delta` update (see src/repositories/user.repository.ts), so concurrent
+//   requests cannot overdraw.
+// * A transaction row is an immutable ledger entry: `topup` (money entering the system, no sender) or
+//   `transfer` (user to user). Balance and ledger row are always written in one database transaction.
+// * `username` is stored normalised (lowercase, see src/domain/username.ts) and is plain UNIQUE,
+//   which gives case-insensitive uniqueness by construction.
+//
+// Prisma 7 note: the `prisma-client` generator emits TypeScript into `src/generated/prisma` (never
+// into node_modules) and requires an explicit `output`. `moduleFormat = "cjs"` keeps the generated
+// code consumable by this project's CommonJS build (NestJS default) and by ts-jest.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  user
+  admin
+}
+
+enum TransactionType {
+  topup
+  transfer
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.Text
+  /// NULL means "token only account": registered without a password, so /login is not available.
+  passwordHash String?  @map("password_hash") @db.Text
+  role         UserRole @default(user)
+  balance      Decimal  @default(0) @db.Decimal(20, 2)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sent     Transaction[] @relation("TransactionSender")
+  received Transaction[] @relation("TransactionRecipient")
+
+  @@map("users")
+}
+
+model Transaction {
+  id         Int             @id @default(autoincrement())
+  type       TransactionType
+  fromUserId Int?            @map("from_user_id")
+  toUserId   Int             @map("to_user_id")
+  amount     Decimal         @db.Decimal(20, 2)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  fromUser User? @relation("TransactionSender", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User  @relation("TransactionRecipient", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  /// Reporting reads the ledger from both sides ("my debits" and "my credits"), so both directions
+  /// are indexed with created_at for the paginated, time ordered listing.
+  @@index([fromUserId, createdAt(sort: Desc)], map: "transactions_from_user_created_idx")
+  @@index([toUserId, createdAt(sort: Desc)], map: "transactions_to_user_created_idx")
+  /// Powers "top users by transacted value" (outbound only).
+  @@index([type, fromUserId], map: "transactions_type_from_user_idx")
+  @@map("transactions")
+}

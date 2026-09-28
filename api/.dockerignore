@@ -3,8 +3,9 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
-tests
+test
 coverage
+dist
 Dockerfile
 .dockerignore
 README.md
