@@ -42,18 +42,26 @@ Log in at <http://localhost:5173> with `ADMIN_USERNAME` / `ADMIN_PASSWORD` from 
 ## Quick start (Docker)
 
 ```bash
-JWT_SECRET="a-very-long-development-secret-key-1234" docker compose up --build
-# dashboard  → http://localhost:5173
+cd /path/to/Test                        # the compose file lives at the repository root
+JWT_SECRET="a-very-long-development-secret-key-1234" docker compose up -d --build --wait
+# dashboard  → http://localhost:5173        (use 127.0.0.1 if a local dev server is on :5173)
 # API        → http://localhost:4000/api/v1/health
+# Postgres   → localhost:5433 on the host (5432 inside the compose network)
 ```
 
 The API container runs migrations and seeds the admin account on boot, so the stack is ready
-to log into immediately.
+to log into immediately (`admin` / `admin12345` unless `ADMIN_*` is overridden). `--wait` blocks until
+every health check passes — drop it for the detached version and follow the boot with
+`docker compose logs -f api` instead. Data lives in the `wallet-db` volume; `docker compose down -v`
+throws it away, `docker compose down` keeps it.
+
+`cd api && npm run smoke` against that stack runs the same 28 end-to-end checks the file-based
+instructions use.
 
 ## Tests
 
 ```bash
-cd api   && npm test                 # 102 unit tests, no database needed
+cd api   && npm test                 # 106 unit tests, no database needed
 cd api   && npm run test:integration #  50 integration tests (creates wallet_test automatically)
 cd api   && npm run smoke            #  28 end-to-end checks against a running API
 cd react && npm test                 #  19 dashboard tests
@@ -95,6 +103,7 @@ the code in this repository, in this order:
 | 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
 | 9 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
 | 10 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
+| 11 | `docker compose up -d --build --wait` (repo root) | **3/3 containers healthy**: `db` (`postgres:16-alpine`, host port 5433), `api` (`prisma migrate deploy` → "No pending migrations", admin seeded, `/api/v1/health` → 200, register → 201), `web` (nginx 1.27 serving `127.0.0.1:5173`); `npm run smoke` against the stack → **28/28** |
 
 What the smoke run covers end to end (against a live server, not a mock): health, register/login/duplicate
 username, missing and invalid tokens, topup boundaries (`9,999,999.99` accepted, `10,000,000` and `1.005`
@@ -119,12 +128,13 @@ cards load, the table lists transactions, searching by a counterparty filters it
 
 ### Deploying a live URL
 
-This machine has no Docker daemon running and no git remote configured, so nothing was deployed or
-pushed from here:
+Nothing was deployed from this machine: there is no git remote configured, and the containers were run
+locally only (Docker reached the daemon on this host, not a remote registry). The pieces are ready:
 
-* **Whole stack in one command** — `JWT_SECRET="$(openssl rand -hex 32)" docker compose up --build`
-  starts PostgreSQL, the API (migrating and seeding on boot) and the nginx-served dashboard.
-* **API** — any Node host (Render, Railway, Fly.io, EC2): `npm ci --omit=dev && node src/server.js`
+* **Whole stack in one command** — `JWT_SECRET="$(openssl rand -hex 32)" docker compose up -d --build`
+  starts PostgreSQL, the API (migrating and seeding on boot) and the nginx-served dashboard; verified
+  end to end on this machine (see [Verification](#verification)).
+* **API** — any Node host (Render, Railway, Fly.io, EC2): `npm ci --omit=dev && node dist/main.js`
   with `DATABASE_URL`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` set; the container image is in
   `api/Dockerfile`.
 * **Dashboard** — any static host (Vercel, Netlify, S3): build with

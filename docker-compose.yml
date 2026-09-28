@@ -1,6 +1,8 @@
 # Runs PostgreSQL + the wallet API + the dashboard.
-#   JWT_SECRET="$(openssl rand -hex 32)" docker compose up --build
+#   JWT_SECRET="$(openssl rand -hex 32)" docker compose up -d --build
 # dashboard -> http://localhost:5173   API -> http://localhost:4000/api/v1/health
+# The database is published on 5433, not 5432, so a Homebrew/local PostgreSQL on the host can keep
+# running (the API reaches the container as `db:5432` over the compose network either way).
 services:
   db:
     image: postgres:16-alpine
@@ -9,7 +11,7 @@ services:
       POSTGRES_PASSWORD: wallet
       POSTGRES_DB: wallet
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - wallet-db:/var/lib/postgresql/data
     healthcheck:
@@ -52,7 +54,9 @@ services:
       - '5173:80'
     depends_on:
       api:
-        condition: service_started
+        # The dashboard itself is static, but waiting for the API's health check means the first
+        # browser request after `up -d` never lands before the API can answer it.
+        condition: service_healthy
 
 volumes:
   wallet-db:
