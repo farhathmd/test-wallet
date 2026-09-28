@@ -1,8 +1,11 @@
 # Runs PostgreSQL + the wallet API + the dashboard.
-#   JWT_SECRET="$(openssl rand -hex 32)" docker compose up -d --build
+#   cp .env.example .env && docker compose up -d --build --wait
 # dashboard -> http://localhost:5173   API -> http://localhost:4000/api/v1/health
 # The database is published on 5433, not 5432, so a Homebrew/local PostgreSQL on the host can keep
 # running (the API reaches the container as `db:5432` over the compose network either way).
+# `name` keeps container and image names stable ("wallet-api-1", "wallet-api") no matter what the
+# checkout directory is called.
+name: wallet
 services:
   db:
     image: postgres:16-alpine
@@ -11,7 +14,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: wallet
-      POSTGRES_PASSWORD: wallet
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — see .env.example}"
       POSTGRES_DB: wallet
     ports:
       - '127.0.0.1:5433:5432'
@@ -29,13 +32,15 @@ services:
     environment:
       NODE_ENV: production
       PORT: '4000'
-      DATABASE_URL: postgres://wallet:wallet@db:5432/wallet
-      # Override in production: JWT_SECRET="$(openssl rand -hex 32)" docker compose up
-      JWT_SECRET: ${JWT_SECRET:-change-me-this-is-only-a-local-development-secret}
+      DATABASE_URL: "postgres://wallet:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/wallet"
+      # No fallback on the three secrets: booting with a public default means forgeable tokens and a
+      # known admin password, which is worse than failing to start.
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is required — see .env.example}"
       JWT_EXPIRES_IN: 7d
-      CORS_ORIGIN: http://localhost:5173
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
+      # The dashboard's public origin; the default matches the compose port below.
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required — see .env.example}"
       DB_POOL_MAX: '10'
     ports:
       - '4000:4000'
@@ -54,9 +59,16 @@ services:
       context: ./react
       args:
         # Baked into the bundle: the browser must be able to reach the API from the host machine.
-        VITE_API_URL: http://localhost:4000/api/v1
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:4000/api/v1}"
     ports:
       - '5173:80'
+    healthcheck:
+      # busybox wget from the alpine base: this proves nginx is answering requests, not just that the
+      # container started, which is what makes `--wait` meaningful for this service too.
+      test: ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/ || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       api:
         # The dashboard itself is static, but waiting for the API's health check means the first

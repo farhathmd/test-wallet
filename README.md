@@ -43,17 +43,23 @@ Log in at <http://localhost:5173> with `ADMIN_USERNAME` / `ADMIN_PASSWORD` from 
 
 ```bash
 cd /path/to/Test                        # the compose file lives at the repository root
-JWT_SECRET="a-very-long-development-secret-key-1234" docker compose up -d --build --wait
+cp .env.example .env                    # then fill in the three secrets it lists
+docker compose up -d --build --wait
 # dashboard  → http://localhost:5173        (use 127.0.0.1 if a local dev server is on :5173)
 # API        → http://localhost:4000/api/v1/health
 # Postgres   → localhost:5433 on the host (5432 inside the compose network)
 ```
 
-The API container runs migrations and seeds the admin account on boot, so the stack is ready
-to log into immediately (`admin` / `admin12345` unless `ADMIN_*` is overridden). `--wait` blocks until
-every health check passes — drop it for the detached version and follow the boot with
-`docker compose logs -f api` instead. Data lives in the `wallet-db` volume; `docker compose down -v`
-throws it away, `docker compose down` keeps it.
+Generate the three secrets with `openssl rand -hex 16` (database), `-hex 32` (`JWT_SECRET`) and
+`-hex 12` (admin password). Compose reads `./.env` and **refuses to start while any of them is empty**,
+rather than falling back to a development default that would be committed to the compose file.
+
+The API container runs migrations and seeds the admin account on boot, so the stack is ready to log
+into immediately with the `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `.env`. `--wait` blocks until every
+health check passes — drop it for the detached version and follow the boot with
+`docker compose logs -f api` instead. Containers are named `wallet-*` whatever the checkout folder is
+called, and data lives in the `wallet_wallet-db` volume: `docker compose down -v` throws it away,
+`docker compose down` keeps it.
 
 `cd api && npm run smoke` against that stack runs the same 28 end-to-end checks the file-based
 instructions use.
@@ -103,7 +109,7 @@ the code in this repository, in this order:
 | 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
 | 9 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
 | 10 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
-| 11 | `docker compose up -d --build --wait` (repo root, production mode, generated `JWT_SECRET`) | **3/3 containers healthy**, `restart: unless-stopped` on all three: `db` (`postgres:16-alpine`, host port 5433), `api` (`prisma migrate deploy` → "No pending migrations", admin seeded, `/api/v1/health` → 200, register → 201), `web` (nginx 1.27 serving `127.0.0.1:5173`, bundle baked with the API URL, `/login` → 200); `npm run smoke` against the stack → **28/28** |
+| 11 | `docker compose up -d --build --wait` (repo root, project `wallet`, fresh volume, secrets from `.env`) | **3/3 containers healthy**, `restart: unless-stopped` on all three: `db` (`postgres:16-alpine`, host port 5433, `All migrations have been successfully applied`), `api` (admin seeded, `/api/v1/health` → 200, login with the `.env` admin password → 200, **the previous development password → 401**), `web` (nginx 1.27.5 on `localhost:5173`, bundle baked with the API URL, `/login` → 200); `npm run smoke` against the stack → **28/28**. With no `.env`, compose exits 1 with `required variable POSTGRES_PASSWORD is missing a value` instead of booting on a default secret |
 
 What the smoke run covers end to end (against a live server, not a mock): health, register/login/duplicate
 username, missing and invalid tokens, topup boundaries (`9,999,999.99` accepted, `10,000,000` and `1.005`
@@ -131,22 +137,21 @@ cards load, the table lists transactions, searching by a counterparty filters it
 Nothing was deployed from this machine: there is no git remote configured, and the containers were run
 locally only (Docker reached the daemon on this host, not a remote registry). The pieces are ready:
 
-* **Whole stack in one command** — `JWT_SECRET="$(openssl rand -hex 32)" docker compose up -d --build`
-  starts PostgreSQL, the API (migrating and seeding on boot) and the nginx-served dashboard; verified
-  end to end on this machine (see [Verification](#verification)). For a real host, supply the three
-  secrets it needs instead of the development defaults baked into the compose file:
+* **Whole stack in one command** — `cp .env.example .env`, fill in the three secrets, then
+  `docker compose up -d --build --wait` starts PostgreSQL, the API (migrating and seeding on boot) and
+  the nginx-served dashboard; verified end to end on this machine (see [Verification](#verification)).
+  On a real host, the only other values that change are the two public origins:
 
   ```bash
-  export JWT_SECRET="$(openssl rand -hex 32)"
-  export ADMIN_PASSWORD="$(openssl rand -base64 24)"
-  export CORS_ORIGIN="https://wallet.example.com"     # the dashboard's public origin
-  docker compose up -d --build --wait
+  # in .env — VITE_API_URL is a build arg, so it needs `--build` to take effect
+  CORS_ORIGIN=https://wallet.example.com
+  VITE_API_URL=https://api.example.com/api/v1
   ```
 
   `CORS_ORIGIN` is what stops another site from calling the API with a logged-in browser, and the admin
   password is re-applied on every boot (the seeder upserts it), so rotating it is a config change plus a
   restart rather than a SQL statement. `docker compose build` produces the two production images —
-  `test-api` and `test-web`, also tagged `wallet-api:prod` / `wallet-dashboard:prod` — which can be
+  `wallet-api` and `wallet-web`, also tagged `wallet-api:prod` / `wallet-dashboard:prod` — which can be
   pushed to a registry and deployed on their own. The API image is ~860 MB because the Prisma CLI and
   its engines ship inside it: that is what lets the container apply migrations on boot.
 * **API** — any Node host (Render, Railway, Fly.io, EC2): `npm ci --omit=dev && node dist/main.js`

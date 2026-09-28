@@ -391,7 +391,7 @@ docker build -t wallet-api ./api
 docker run --rm -p 4000:4000 \
   -e DATABASE_URL=postgres://user:pass@host:5432/wallet \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
-  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=admin12345 \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD="$(openssl rand -hex 12)" \
   wallet-api
 ```
 
@@ -399,8 +399,8 @@ The image is a two-stage build: the first stage installs the toolchain, generate
 compiles to `dist/`, the second copies only what the runtime needs and drops privileges to the
 unprivileged `node` user. It applies pending migrations (`prisma migrate deploy`) and then seeds the
 admin account on boot, so a fresh database needs no manual step — which is also why `prisma` is a
-production dependency. From the repository root, `docker compose up --build` starts PostgreSQL and this
-image together.
+production dependency. From the repository root, copy `.env.example` to `.env`, fill in the three secrets
+it lists, and `docker compose up --build` starts PostgreSQL and this image together.
 
 
 
