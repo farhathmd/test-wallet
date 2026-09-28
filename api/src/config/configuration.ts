@@ -14,7 +14,6 @@ const MIN_JWT_SECRET_LENGTH = 32;
 
 export interface AppConfig {
   readonly nodeEnv: string;
-  readonly isProduction: boolean;
   readonly port: number;
   readonly databaseUrl: string;
   readonly dbPoolMax: number;
@@ -63,7 +62,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   return Object.freeze({
     nodeEnv,
-    isProduction: nodeEnv === 'production',
     port: numberVariable(env, 'PORT', DEFAULT_PORT),
     databaseUrl: requireVariable(env, 'DATABASE_URL'),
     dbPoolMax: numberVariable(env, 'DB_POOL_MAX', 10),

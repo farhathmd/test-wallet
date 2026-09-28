@@ -103,7 +103,7 @@ the code in this repository, in this order:
 | 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
 | 9 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
 | 10 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
-| 11 | `docker compose up -d --build --wait` (repo root) | **3/3 containers healthy**: `db` (`postgres:16-alpine`, host port 5433), `api` (`prisma migrate deploy` → "No pending migrations", admin seeded, `/api/v1/health` → 200, register → 201), `web` (nginx 1.27 serving `127.0.0.1:5173`); `npm run smoke` against the stack → **28/28** |
+| 11 | `docker compose up -d --build --wait` (repo root, production mode, generated `JWT_SECRET`) | **3/3 containers healthy**, `restart: unless-stopped` on all three: `db` (`postgres:16-alpine`, host port 5433), `api` (`prisma migrate deploy` → "No pending migrations", admin seeded, `/api/v1/health` → 200, register → 201), `web` (nginx 1.27 serving `127.0.0.1:5173`, bundle baked with the API URL, `/login` → 200); `npm run smoke` against the stack → **28/28** |
 
 What the smoke run covers end to end (against a live server, not a mock): health, register/login/duplicate
 username, missing and invalid tokens, topup boundaries (`9,999,999.99` accepted, `10,000,000` and `1.005`
@@ -133,7 +133,22 @@ locally only (Docker reached the daemon on this host, not a remote registry). Th
 
 * **Whole stack in one command** — `JWT_SECRET="$(openssl rand -hex 32)" docker compose up -d --build`
   starts PostgreSQL, the API (migrating and seeding on boot) and the nginx-served dashboard; verified
-  end to end on this machine (see [Verification](#verification)).
+  end to end on this machine (see [Verification](#verification)). For a real host, supply the three
+  secrets it needs instead of the development defaults baked into the compose file:
+
+  ```bash
+  export JWT_SECRET="$(openssl rand -hex 32)"
+  export ADMIN_PASSWORD="$(openssl rand -base64 24)"
+  export CORS_ORIGIN="https://wallet.example.com"     # the dashboard's public origin
+  docker compose up -d --build --wait
+  ```
+
+  `CORS_ORIGIN` is what stops another site from calling the API with a logged-in browser, and the admin
+  password is re-applied on every boot (the seeder upserts it), so rotating it is a config change plus a
+  restart rather than a SQL statement. `docker compose build` produces the two production images —
+  `test-api` and `test-web`, also tagged `wallet-api:prod` / `wallet-dashboard:prod` — which can be
+  pushed to a registry and deployed on their own. The API image is ~860 MB because the Prisma CLI and
+  its engines ship inside it: that is what lets the container apply migrations on boot.
 * **API** — any Node host (Render, Railway, Fly.io, EC2): `npm ci --omit=dev && node dist/main.js`
   with `DATABASE_URL`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` set; the container image is in
   `api/Dockerfile`.
