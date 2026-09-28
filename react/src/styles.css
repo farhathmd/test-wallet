@@ -1,0 +1,544 @@
+/* Wallet Admin Dashboard — single stylesheet.
+   Design goals: readable numbers (tabular figures, one accent colour per money direction), a layout
+   that works from a laptop down to a phone, and no dependency on a CSS framework for ~8 elements. */
+
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --accent: #4338ca;
+  --accent-soft: #eef2ff;
+  --credit: #15803d;
+  --credit-soft: #ecfdf3;
+  --debit: #b91c1c;
+  --debit-soft: #fef2f2;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2 {
+  margin: 0 0 0.25rem;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+}
+
+p {
+  margin: 0 0 0.5rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--accent-soft);
+  padding: 0.1rem 0.3rem;
+  border-radius: 5px;
+}
+
+/* ---------- layout ---------- */
+
+.layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem clamp(1rem, 3vw, 2.5rem);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.layout__main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.layout__footer {
+  padding: 1rem clamp(1rem, 3vw, 2.5rem) 2rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.layout__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.layout__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+/* ---------- cards, stats and charts ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+}
+
+.card__header {
+  margin-bottom: 1rem;
+}
+
+.card__header p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.dashboard__intro p {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.1rem;
+}
+
+.stat-card__label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-card__value {
+  margin: 0.35rem 0 0.15rem;
+  font-size: 1.6rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.stat-card--credit .stat-card__value {
+  color: var(--credit);
+}
+
+.stat-card--debit .stat-card__value {
+  color: var(--debit);
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.chart-card__header {
+  margin-bottom: 0.75rem;
+}
+
+.chart-card__caption {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.chart-card__canvas {
+  position: relative;
+  height: 260px;
+}
+
+/* ---------- filters and forms ---------- */
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.filters__field--wide {
+  grid-column: span 2;
+}
+
+.filters__field label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.filters__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+  min-width: 0;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input:disabled,
+select:disabled,
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button {
+  border-radius: 9px;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 550;
+}
+/* ---------- table ---------- */
+
+.table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.table__caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.table th,
+.table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table thead th {
+  background: #f8fafc;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table__amount-header,
+.table__amount {
+  text-align: right;
+}
+
+.table__amount {
+  font-weight: 600;
+}
+
+.amount--credit {
+  color: var(--credit);
+}
+
+.amount--debit {
+  color: var(--debit);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.badge--topup {
+  background: var(--accent-soft);
+  color: #4338ca;
+}
+
+.badge--transfer {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.badge--role-admin {
+  background: var(--credit-soft);
+  color: var(--credit);
+}
+
+.badge--role-user {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.direction {
+  font-size: 0.85rem;
+}
+
+.direction--credit {
+  color: var(--credit);
+}
+
+.direction--debit {
+  color: var(--debit);
+}
+
+/* ---------- pagination ---------- */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.pagination__description,
+.pagination__page {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---------- states, login ---------- */
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+  font-size: 0.92rem;
+}
+
+.state--loading {
+  color: var(--text-muted);
+}
+
+.state--empty {
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+}
+
+.state--error {
+  justify-content: space-between;
+  background: var(--debit-soft);
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+}
+
+.state--error p {
+  margin: 0;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.login__card {
+  width: min(420px, 100%);
+  padding: 1.75rem;
+}
+
+.login__header {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.login__header p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.login__error {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--debit-soft);
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  color: #7f1d1d;
+  font-size: 0.88rem;
+}
+
+.login__hint {
+  margin: 1.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .filters__field--wide {
+    grid-column: span 1;
+  }
+
+  .layout__header {
+    align-items: flex-start;
+  }
+}
+
+
+.button--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button--ghost {
+  background: #fff;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.button--ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.brand__mark--large {
+  width: 46px;
+  height: 46px;
+  font-size: 1.4rem;
+  margin: 0 auto 0.75rem;
+}
