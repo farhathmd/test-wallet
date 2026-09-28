@@ -75,10 +75,10 @@ function optionalEnum(raw, field, allowed) {
  * Parse a YYYY-MM-DD date as UTC midnight.
  * @param {unknown} raw
  * @param {string} field
- * @returns {string|null} ISO timestamp, or null when the filter is absent
+ * @returns {string|undefined} ISO timestamp, or undefined when the filter is absent
  */
 function optionalDate(raw, field) {
-  if (raw === undefined || raw === '') return null;
+  if (raw === undefined || raw === '') return undefined;
   if (typeof raw !== 'string' || !DATE_PATTERN.test(raw)) {
     throw new ValidationError(`"${field}" must be a date in YYYY-MM-DD format.`, { field });
   }

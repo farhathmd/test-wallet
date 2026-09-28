@@ -4,7 +4,13 @@ import {
   UnauthorizedError,
   ValidationError,
 } from '../domain/errors.js';
-import { formatCents, formatSignedCents, toAmount, toCents } from '../domain/money.js';
+import {
+  centsToAmount,
+  formatCents,
+  formatSignedCents,
+  toAmount,
+  toCents,
+} from '../domain/money.js';
 import { normalizeUsername } from '../domain/username.js';
 
 /**
@@ -88,7 +94,7 @@ export function createWalletService({ userRepository, unitOfWork }) {
         if (balanceCents < cents) {
           throw new InsufficientBalanceError(
             `Insufficient balance: ${formatCents(balanceCents)} available, ${formatCents(cents)} requested.`,
-            { balance: toAmount(sender.balance), requested: toAmount(cents) },
+            { balance: toAmount(sender.balance), requested: centsToAmount(cents) },
           );
         }
 
@@ -98,7 +104,7 @@ export function createWalletService({ userRepository, unitOfWork }) {
           // silently allow an overdraft.
           throw new InsufficientBalanceError('Insufficient balance.', {
             balance: toAmount(sender.balance),
-            requested: toAmount(cents),
+            requested: centsToAmount(cents),
           });
         }
         await users.adjustBalance(recipient.id, formatCents(cents));

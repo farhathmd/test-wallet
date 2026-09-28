@@ -13,6 +13,13 @@ const JOIN_CLAUSE = `
   LEFT JOIN users fu ON fu.id = t.from_user_id
 `;
 
+/**
+ * The other party as seen by $1 (the perspective user): when they received the money it is the
+ * sender, when they sent it the recipient. For a topup the sender is NULL, so no counterparty is
+ * reported (and searching can never match a topup).
+ */
+const COUNTERPARTY = `CASE WHEN t.to_user_id = $1 THEN fu.username ELSE tu.username END`;
+
 /** Shared by the page, count and summary queries so the three can never disagree. */
 const FILTER_CLAUSE = `
   (t.from_user_id = $1 OR t.to_user_id = $1)
@@ -20,7 +27,7 @@ const FILTER_CLAUSE = `
   AND ($3::text IS NULL OR (CASE WHEN t.to_user_id = $1 THEN 'credit' ELSE 'debit' END) = $3::text)
   AND ($4::timestamptz IS NULL OR t.created_at >= $4::timestamptz)
   AND ($5::timestamptz IS NULL OR t.created_at < $5::timestamptz)
-  AND ($6::text IS NULL OR COALESCE(fu.username, tu.username) ILIKE '%' || $6::text || '%' ESCAPE '\\')
+  AND ($6::text IS NULL OR ${COUNTERPARTY} ILIKE '%' || $6::text || '%' ESCAPE '\\')
 `;
 
 /** Signed, direction aware amount: a debit is negative for the user being asked about. */
@@ -81,9 +88,9 @@ export function createTransactionRepository(db) {
         `
           SELECT ranked.counterparty, ranked.amount
           FROM (
-            SELECT COALESCE(fu.username, tu.username) AS counterparty,
-                   ${SIGNED_AMOUNT}                  AS amount,
-                   t.id                              AS id
+            SELECT ${COUNTERPARTY} AS counterparty,
+                   ${SIGNED_AMOUNT} AS amount,
+                   t.id             AS id
             FROM transactions t
             ${JOIN_CLAUSE}
             WHERE t.type = 'transfer'
@@ -133,8 +140,7 @@ export function createTransactionRepository(db) {
                  t.amount,
                  t.created_at,
                  CASE WHEN t.to_user_id = $1 THEN 'credit' ELSE 'debit' END AS direction,
-                 CASE WHEN t.type = 'topup' THEN NULL
-                      ELSE COALESCE(fu.username, tu.username) END          AS counterparty
+                 ${COUNTERPARTY} AS counterparty
           FROM transactions t
           ${JOIN_CLAUSE}
           WHERE ${FILTER_CLAUSE}

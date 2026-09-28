@@ -61,6 +61,19 @@ export function formatSignedCents(cents) {
 }
 
 /**
+ * Convert integer cents back to a decimal amount — the inverse of `toCents`, used when an error
+ * payload or a response needs to talk about money in the same unit the client sent.
+ * @param {number} cents
+ * @returns {number}
+ */
+export function centsToAmount(cents) {
+  if (!Number.isSafeInteger(cents)) {
+    throw new TypeError(`Expected integer cents, received ${cents}.`);
+  }
+  return cents / CENTS_PER_UNIT;
+}
+
+/**
  * Normalise a value read back from Postgres (string or number) to a 2-decimal JS number.
  * Postgres NUMERIC is exact; this only strips any representation noise before it is serialised.
  * @param {string|number|null} value
