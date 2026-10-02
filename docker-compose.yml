@@ -37,8 +37,10 @@ services:
       # known admin password, which is worse than failing to start.
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is required — see .env.example}"
       JWT_EXPIRES_IN: 7d
-      # The dashboard's public origin; the default matches the compose port below.
-      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
+      # The dashboard's public origin(s); the default lists both local spellings of the compose port
+      # below, because a browser treats http://localhost:5173 and http://127.0.0.1:5173 as different
+      # origins and whichever is missing is refused with "blocked by CORS policy".
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173,http://127.0.0.1:5173}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required — see .env.example}"
       DB_POOL_MAX: '10'

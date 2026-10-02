@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { toApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -101,9 +101,7 @@ export function LoginPage() {
         </form>
 
         <p className="login__hint">
-          Credentials come from the API environment: <code>ADMIN_USERNAME</code> /{' '}
-          <code>ADMIN_PASSWORD</code> in <code>api/.env</code> (defaults in <code>.env.example</code>:
-          admin / admin12345).
+          No wallet yet? <Link to="/register">Create one</Link>
         </p>
       </section>
     </div>

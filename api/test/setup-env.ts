@@ -18,4 +18,7 @@ process.env.JWT_EXPIRES_IN ??= '1h';
 process.env.ADMIN_USERNAME ??= 'admin';
 process.env.ADMIN_PASSWORD ??= 'admin12345';
 process.env.DB_POOL_MAX ??= '10';
-process.env.CORS_ORIGIN ??= '*';
+// A concrete origin, not `*`: `test/cors.e2e-spec.ts` asserts that an unlisted origin receives no
+// CORS header, which is only observable — and only meaningful — with a real allow-list. Matches the
+// default in `configuration.ts`.
+process.env.CORS_ORIGIN ??= 'http://localhost:5173';

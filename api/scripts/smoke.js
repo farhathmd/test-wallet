@@ -5,11 +5,15 @@
  *   npm start                                    # or: docker compose up
  *   npm run smoke                                # verifies http://localhost:4000
  *   API_URL=https://api.example.com/api/v1 ADMIN_PASSWORD=... npm run smoke
+ *   DASHBOARD_ORIGIN=https://wallet.example.com npm run smoke     # when the dashboard is not local
  *
  * It walks the documented contract in order and prints one line per check: money rules, auth,
- * reporting and the admin view. Exits non-zero if anything is not as documented.
+ * reporting, the admin view, and the CORS policy the browser depends on. Exits non-zero if anything
+ * is not as documented.
  */
 const API_URL = (process.env.API_URL ?? 'http://localhost:4000/api/v1').replace(/\/$/, '');
+/** Where the dashboard is served from, i.e. the origin the browser will call the API with. */
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN ?? 'http://localhost:5173';
 const ADMIN = {
   username: process.env.ADMIN_USERNAME ?? 'admin',
   password: process.env.ADMIN_PASSWORD ?? 'admin12345',
@@ -244,6 +248,37 @@ async function reportChecks(aliceSession) {
     'GET /does-not-exist -> 404 JSON error',
     missing.status === 404 && missing.body.error.code === 'NOT_FOUND',
     missing.body,
+  );
+
+  // CORS is between the browser and this API, so nothing above notices when it is wrong: a direct call
+  // sends no `Origin` and performs no preflight. The dashboard then fails with "blocked by CORS policy"
+  // while every other check here passes — the dashboard's origin must be listed in `CORS_ORIGIN`, and
+  // `http://localhost:5173` and `http://127.0.0.1:5173` are different origins to a browser.
+  const corsRequest = {
+    method: 'OPTIONS',
+    headers: {
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type',
+    },
+  };
+  const allowed = await fetch(`${API_URL}/login`, {
+    ...corsRequest,
+    headers: { ...corsRequest.headers, Origin: DASHBOARD_ORIGIN },
+  });
+  check(
+    `OPTIONS /login from the dashboard (${DASHBOARD_ORIGIN}) -> allowed`,
+    allowed.headers.get('access-control-allow-origin') === DASHBOARD_ORIGIN,
+    allowed.headers.get('access-control-allow-origin'),
+  );
+
+  const foreign = await fetch(`${API_URL}/login`, {
+    ...corsRequest,
+    headers: { ...corsRequest.headers, Origin: 'http://not-the-dashboard.example' },
+  });
+  check(
+    'OPTIONS /login from any other origin -> no Access-Control-Allow-Origin',
+    foreign.headers.get('access-control-allow-origin') === null,
+    foreign.headers.get('access-control-allow-origin'),
   );
 
   console.log(`\n${checks - failures}/${checks} checks passed.`);

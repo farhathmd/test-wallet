@@ -45,7 +45,7 @@ Log in at <http://localhost:5173> with `ADMIN_USERNAME` / `ADMIN_PASSWORD` from 
 cd /path/to/Test                        # the compose file lives at the repository root
 cp .env.example .env                    # then fill in the three secrets it lists
 docker compose up -d --build --wait
-# dashboard  → http://localhost:5173        (use 127.0.0.1 if a local dev server is on :5173)
+# dashboard  → http://localhost:5173        (or http://127.0.0.1:5173 — both are allowed by default)
 # API        → http://localhost:4000/api/v1/health
 # Postgres   → localhost:5433 on the host (5432 inside the compose network)
 ```
@@ -61,16 +61,22 @@ health check passes — drop it for the detached version and follow the boot wit
 called, and data lives in the `wallet_wallet-db` volume: `docker compose down -v` throws it away,
 `docker compose down` keeps it.
 
-`cd api && npm run smoke` against that stack runs the same 28 end-to-end checks the file-based
-instructions use.
+`cd api && npm run smoke` against that stack runs the same 30 end-to-end checks the file-based
+instructions use. Pass the stack's own admin password, since the smoke script reads `api/.env` by
+default: `ADMIN_PASSWORD=$(grep ^ADMIN_PASSWORD .env | cut -d= -f2) npm run smoke`.
+
+The dashboard is reachable at both `http://localhost:5173` and `http://127.0.0.1:5173`; a browser
+treats those as different origins, so `CORS_ORIGIN` lists both. Serving it from any other address
+means adding that exact origin (scheme, host and port) to `CORS_ORIGIN` and restarting `api` — an
+origin that is missing is refused **in the browser only**, with `blocked by CORS policy`.
 
 ## Tests
 
 ```bash
-cd api   && npm test                 # 106 unit tests, no database needed
-cd api   && npm run test:integration #  50 integration tests (creates wallet_test automatically)
-cd api   && npm run smoke            #  28 end-to-end checks against a running API
-cd react && npm test                 #  19 dashboard tests
+cd api   && npm test                 # 111 unit tests, no database needed
+cd api   && npm run test:integration #  54 integration tests (creates wallet_test automatically)
+cd api   && npm run smoke            #  30 end-to-end checks against a running API
+cd react && npm test                 #  40 dashboard tests
 ```
 
 Everything was executed on this machine; see [Verification](#verification) for the exact commands and
@@ -87,8 +93,11 @@ results.
 | Top N transactions by value per user | `GET /api/v1/transactions/top` |
 | Overall top transacting users by value | `GET /api/v1/users/top` |
 | Dashboard login with username + password | `POST /api/v1/login`, `/login` page |
-| Paginated transaction list with search + filters | `GET /api/v1/transactions`, `/dashboard` page |
-| Charts of transaction data | Chart.js bar / doughnut / horizontal bar on `/dashboard` |
+| Self-service registration from the dashboard | `POST /api/v1/register`, `/register` page (creates the wallet and signs it in) |
+| Top up from the dashboard | `POST /api/v1/topup`, `/topup` page (amount as a JSON number, then the balance is read back) |
+| Transfer from the dashboard | `POST /api/v1/transfer`, `/transfer` page (recipient suggestions from `/users/top`) |
+| Paginated transaction list with search + filters | `GET /api/v1/transactions`, overview page at `/` |
+| Charts of transaction data | Chart.js bar / doughnut / horizontal bar on the overview page |
 
 See the per-app READMEs for the full API reference, architecture notes, and design decisions.
 
@@ -99,17 +108,17 @@ the code in this repository, in this order:
 
 | # | Command | Result |
 | --- | --- | --- |
-| 1 | `cd api && npm test` | **106/106 unit tests pass**, ~3 s, no database required (Jest + ts-jest) |
-| 2 | `cd api && npm run test:integration` | **50/50 integration tests pass** on real PostgreSQL (the `wallet_test` database is created and migrated automatically) |
+| 1 | `cd api && npm test` | **111/111 unit tests pass**, ~2 s, no database required (Jest + ts-jest) |
+| 2 | `cd api && npm run test:integration` | **54/54 integration tests pass** on real PostgreSQL (the `wallet_test` database is created and migrated automatically) |
 | 3 | `cd api && npm run migrate && npm run seed` | Prisma migrations applied, admin account seeded (idempotent) |
-| 4 | `cd api && npm run build && node dist/main.js` then `npm run smoke` | API boots on `:4000`, **28/28 documented behaviours verified over HTTP** |
+| 4 | `cd api && npm run build && node dist/main.js` then `npm run smoke` | API boots on `:4000`, **30/30 documented behaviours verified over HTTP** |
 | 5 | `cd api && npx tsc --noEmit` | type check clean for `src/` and `test/` |
 | 6 | `docker build -t wallet-api ./api` + run against a `postgres:16-alpine` container | image builds, `prisma migrate deploy` runs on boot, `/api/v1/health` answers `{"status":"ok","db":"up"}`, register returns 201 |
-| 7 | `cd react && npm test` | **19/19 dashboard tests pass** (login, table, filters, charts, states) |
-| 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 165 kB gzipped) |
+| 7 | `cd react && npm test` | **40/40 dashboard tests pass** (login, register, top-up, transfer, request bodies, table, filters, charts, states) |
+| 8 | `cd react && npm run build` | type check clean, production bundle built (`dist/`, 166 kB gzipped) |
 | 9 | `npm run preview` (4173) / `npm run dev` (5173) | bundle and dev server both serve the app; `/login` returns 200 (SPA fallback) |
-| 10 | `curl -X OPTIONS` from the dashboard origin | CORS preflight answers 204 with the right `Access-Control-*` headers; an unknown origin gets no `Access-Control-Allow-Origin` |
-| 11 | `docker compose up -d --build --wait` (repo root, project `wallet`, fresh volume, secrets from `.env`) | **3/3 containers healthy**, `restart: unless-stopped` on all three: `db` (`postgres:16-alpine`, host port 5433, `All migrations have been successfully applied`), `api` (admin seeded, `/api/v1/health` → 200, login with the `.env` admin password → 200, **the previous development password → 401**), `web` (nginx 1.27.5 on `localhost:5173`, bundle baked with the API URL, `/login` → 200); `npm run smoke` against the stack → **28/28**. With no `.env`, compose exits 1 with `required variable POSTGRES_PASSWORD is missing a value` instead of booting on a default secret |
+| 10 | `curl -X OPTIONS /login` with an `Origin` header, from the dashboard at both `http://localhost:5173` and `http://127.0.0.1:5173`, from `http://[::1]:5173` and from a stranger | each configured origin is echoed back **by name** — 204 with `Access-Control-Allow-Origin` equal to the requesting origin, `Allow-Methods` containing `POST` and `Allow-Headers` containing `content-type`; `[::1]` and the stranger get **no** `Access-Control-Allow-Origin` at all. A real `POST /login` from either spelling → 200 with a matching header. Enforced by `test/cors.e2e-spec.ts` (4 cases) and 2 `npm run smoke` checks, so a regression fails the suite rather than the browser |
+| 11 | `docker compose up -d --build --wait` (repo root, project `wallet`, fresh volume, secrets from `.env`) | **3/3 containers healthy**, `restart: unless-stopped` on all three: `db` (`postgres:16-alpine`, host port 5433, `All migrations have been successfully applied`), `api` (admin seeded, `/api/v1/health` → 200, login with the `.env` admin password → 200, **the previous development password → 401**), `web` (nginx 1.27.5 on `localhost:5173`, bundle baked with the API URL, `/login` → 200); the dashboard's origin reaches the API from **both** `localhost` and `127.0.0.1` (preflight 204 echoing the requesting origin, real login 200), while a stranger's origin gets no CORS header; `npm run smoke` against the stack → **30/30**. With no `.env`, compose exits 1 with `required variable POSTGRES_PASSWORD is missing a value` instead of booting on a default secret |
 
 What the smoke run covers end to end (against a live server, not a mock): health, register/login/duplicate
 username, missing and invalid tokens, topup boundaries (`9,999,999.99` accepted, `10,000,000` and `1.005`
@@ -117,6 +126,25 @@ rejected), exact balance arithmetic, transfer to a differently-cased username, o
 `INSUFFICIENT_BALANCE` and no balance change, self transfer and unknown recipient rejected, both rankings,
 the paginated ledger with search/filters/date range, an empty result set, and the admin-only cross-wallet
 view (200 for an admin, 403 for a normal user).
+
+### Dashboard ↔ API contract check
+
+The dashboard was pointed at the running stack and the calls it makes were replayed with `curl`:
+`register` → 201 with `{id, username, role, balance, created_at, token}` (one flat object — which is why
+the front end splits off `token` and stores the rest as the user), `topup` 250.00 → 204, `GET /balance` →
+250, `transfer` 25.50 to `admin` → 204, balance 224.50; overdraft → 400 `Insufficient balance: 224.50
+available, 99999.00 requested.`, self transfer → 400 `Cannot transfer to yourself.`, duplicate username →
+409, missing token → 401. Those messages are exactly what the UI shows, verbatim.
+
+That check earned its keep: the amount must be a **JSON number**, and the first version of the new screens
+sent the typed text, so `{"amount":"250.00"}` came back as 400 `"amount" must be a finite number.` — every
+submit would have failed in the browser while every mocked test passed. `toAmount`
+(`react/src/api/wallet.api.ts`) now parses at the HTTP boundary and `react/src/tests/wallet-api.test.ts`
+pins the request body, so the same mistake fails the suite instead of the user. Every client route (`/`,
+`/login`, `/register`, `/topup`, `/transfer`, and an unknown path) returns 200 from nginx, so a hard
+refresh on any of them works. The probe account was deleted afterwards — `admin` is back to 0.00 with an
+empty ledger — and the bundle on `localhost:5173` was rebuilt (`docker compose build web`), so what is
+served is the fixed code.
 
 ### Manual browser check (2 minutes)
 
@@ -130,7 +158,10 @@ cd react && cp .env.example .env && npm install && npm run dev
 
 Then open <http://localhost:5173>, sign in with `admin` / `admin12345`, and check: the balance and chart
 cards load, the table lists transactions, searching by a counterparty filters it, paging works, and the
-"Wallet (admin)" field appears because the signed-in account is an admin.
+"Wallet (admin)" field appears because the signed-in account is an admin. The header links to **Top up**
+and **Transfer**, the overview refetches when you return from either (the balance and the ledger both
+change if you moved money), and `admin` / `admin12345` can create a second wallet at `/register` to
+transfer to.
 
 ### Deploying a live URL
 

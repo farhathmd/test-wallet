@@ -1,7 +1,8 @@
 # Wallet Admin Dashboard
 
-React 19 + TypeScript + Vite front end for the [wallet API](../api/README.md): sign in, read the
-balance, review the transaction ledger with search and filters, and look at the same data as charts.
+React 19 + TypeScript + Vite front end for the [wallet API](../api/README.md): sign in (or create a
+wallet), read the balance, move money with a top-up or a transfer, review the transaction ledger with
+search and filters, and look at the same data as charts.
 
 - **Stack:** Vite 8, React 19, TypeScript 5.9, Axios, Chart.js 4 (`react-chartjs-2`), React Router 7
 - **Tests:** Vitest + Testing Library (jsdom) — component behaviour with the network layer faked
@@ -24,7 +25,8 @@ npm run dev                         # http://localhost:5173
 ```
 
 Sign in with the credentials the API seeded: `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `api/.env`
-(`admin` / `admin12345` with the provided `.env.example`).
+(`admin` / `admin12345` with the provided `.env.example`). A fresh wallet can also be created at
+<http://localhost:5173/register>.
 
 | Command | What it does |
 | --- | --- |
@@ -53,6 +55,20 @@ from the API, whose message is shown verbatim (for example "Invalid username or 
 success the token and user are stored and the user is taken to the dashboard (or back to the page they
 originally asked for).
 
+**Register** (`/register`) — creates a wallet via `POST /register` and signs it in immediately, because
+the API returns a token from `/register` exactly as it does from `/login`. This form requires a
+password even though the API allows omitting it: a password-less account could never be signed into
+again here (login needs both fields), so the permissive option would produce a wallet the browser can
+only reach once. A taken username comes back as the API's 409 message.
+
+**Top up** (`/topup`) — `POST /topup` with the amount parsed from the input. The endpoint has no target
+parameter by design (the token decides whose wallet moves) and answers 204, so the page reads
+`GET /balance` back to confirm the new figure.
+
+**Transfer** (`/transfer`) — `POST /transfer` with `{ to_username, amount }`. Recipient suggestions come
+from `GET /users/top` minus the signed-in user (offering your own name would invite the one transfer the
+API always rejects); the field stays free text, since the names are hints rather than a whitelist.
+
 **Dashboard** (`/`)
 
 | Area | Source |
@@ -72,6 +88,10 @@ signed amount (`+$/…`, `−$/…`), and pages forward/back with a "1–10 of 4
 Every remote panel has three visible states, not one: a spinner while loading, an error banner with a
 **Try again** button when a request fails, and an explicit empty state instead of a blank chart.
 
+Because `/topup` and `/transfer` are their own routes, the overview unmounts while you are on them and
+refetches the balance and the ledger when you come back — there is no shared cache to invalidate after a
+write.
+
 ### How the sign is shown
 
 `GET /transactions/top` returns **signed** amounts (debits negative), while `GET /transactions`
@@ -87,16 +107,27 @@ react/
 │   │   ├── client.ts       attaches the token, converts every failure into an ApiError
 │   │   ├── session.ts      the only module that touches localStorage
 │   │   ├── auth.api.ts     POST /login, POST /register
-│   │   └── wallet.api.ts   balance, rankings and the paginated ledger
+│   │   └── wallet.api.ts   balance, rankings, the paginated ledger, POST /topup, POST /transfer
 │   ├── charts/         register.ts (tree-shaken Chart.js) + options.ts (pure data/option builders)
 │   ├── components/     small, single-purpose presentational pieces (table, cards, filters, charts)
-│   ├── context/        AuthContext: session state, login, logout, auto sign-out on 401
-│   ├── hooks/          useApiResource, useDebouncedValue, useWalletData
-│   ├── pages/          LoginPage, DashboardPage, NotFoundPage
-│   ├── tests/          setup + format-and-charts, login and dashboard test suites
+│   ├── context/        AuthContext: session state, login, register, logout, auto sign-out on 401
+│   ├── hooks/          useApiResource, useDebouncedValue, useWalletData, useFormSubmit
+│   ├── pages/          LoginPage, RegisterPage, DashboardPage, TopupPage, TransferPage, NotFoundPage
+│   ├── tests/          setup + format-and-charts, wallet-api, login, register, wallet-actions, dashboard
 │   └── utils/format.ts pure currency/date/label formatting
 └── vite.config.ts      Vite + Vitest configuration
 ```
+
+Routes:
+
+| Path | Access | Screen |
+| --- | --- | --- |
+| `/login` | public | sign in |
+| `/register` | public | create a wallet and sign in |
+| `/` | session | overview: cards, charts, ledger |
+| `/topup` | session | add funds to your own wallet |
+| `/transfer` | session | send funds to another username |
+| `*` | — | "page not found" |
 
 Rules the codebase follows:
 
@@ -105,7 +136,11 @@ Rules the codebase follows:
 * **Presentation logic is pure.** Chart data and formatting live in `charts/options.ts` and
   `utils/format.ts` and are unit tested without a browser; the components are thin wrappers.
 * **One place per concern.** Token attachment and 401 handling happen in one interceptor; the session
-  lives in one module; `useApiResource` owns loading/error/reload for every panel.
+  lives in one module; `useApiResource` owns loading/error/reload for every panel, and `useFormSubmit`
+  owns submitting/error/result for every write.
+* **The API owns the validation.** Forms check only that a field is filled in; amounts, usernames,
+  password lengths and business refusals (insufficient balance, unknown recipient, taken username) come
+  back as the API's message and are rendered verbatim, so the rules cannot drift between the two sides.
 
 ## Design decisions worth knowing
 
@@ -125,25 +160,42 @@ Rules the codebase follows:
 * **Charts are data + options builders, not components.** The interesting logic (colours by direction,
   absolute bars for mixed signs, index axes) is testable without a canvas; tests mock
   `react-chartjs-2` and assert the data that reaches each chart.
-* **Known limitations:** the bundle is ~165 kB gzipped, mostly Chart.js — lazy-loading the charts
+* **Amounts are parsed once, at the HTTP boundary.** The API's DTO requires a JSON *number* and answers
+  `"amount" must be a finite number.` for the string `"250.00"` — a mismatch that only a request against
+  a live API exposes, so `wallet.api.ts` parses the typed text with `toAmount` and the pages pass the
+  text through untouched. Blank input throws `Enter an amount.` there rather than relying on `Number('')`,
+  which is `0`. The money rules themselves (greater than 0, less than 10,000,000, at most two decimals)
+  stay in the API and are never copied into the browser; a rejected amount shows the API's message.
+* **Writes answer 204, so the balance is read back.** A `POST` that returns no body cannot confirm
+  anything, so both money screens call `GET /balance` after a successful write and show the figure the
+  API reports — which is also the only way to know it.
+* **Known limitations:** the bundle is ~166 kB gzipped, mostly Chart.js — lazy-loading the charts
   (dynamic `import()`) is the obvious next optimisation if first paint matters; the dashboard has no
-  dark mode; there is no route-level code splitting because there is one route.
+  dark mode; there is no route-level code splitting (the screens are small and the charts dominate the
+  bundle anyway); `/register` is open to anyone who can reach the API (the API has no rate limiting or
+  CAPTCHA — locking registration down, or moving it behind an admin route, is a server-side decision);
+  the transfer recipient suggestions come from the top-50 users, so a name outside that list must be
+  typed in full.
 
 ## Testing
 
 ```bash
-npm test          # 19 tests, ~2 s
+npm test          # 40 tests, ~6 s
 ```
 
 | Suite | Covers |
 | --- | --- |
 | `src/tests/format-and-charts.test.ts` | money/date/label formatting, page descriptions, chart builders (signed → absolute values, colours, empty data) |
+| `src/tests/wallet-api.test.ts` | the HTTP boundary itself: the request bodies (`{"amount":250}`, not `"250.00"`; `to_username`), the amount parse including blank and non-numeric input, the `limit` used for the suggestion list |
 | `src/tests/login.test.tsx` | login through the real router and auth context: validation, error message, session persistence, redirect for an existing session |
+| `src/tests/register.test.tsx` | sign-up: empty fields send nothing, a 201 stores the session and lands on the overview, a 409 stays on the form with the API's message, the link from `/login`, and the redirect for a signed-in visitor |
+| `src/tests/wallet-actions.test.tsx` | top-up and transfer: the exact request body (`to_username` included), no request for an empty form, the API's message for a rejected amount / low balance, the balance read after the 204, recipient suggestions excluding yourself, the header links, and the guard on a direct visit without a session |
 | `src/tests/dashboard.test.tsx` | cards, table rendering (including the derived sign), paging, debounced search, admin-only filter, empty and error states with retry |
 
-Only `api/auth.api` and `api/wallet.api` are mocked, so the tests exercise the code we wrote:
-components, hooks, context, routing. The chart components render a stub, which is why the builders are
-tested separately.
+Only `api/auth.api` and `api/wallet.api` are mocked, so the screen tests exercise the code we wrote:
+components, hooks, context, routing. The exceptions are `wallet-api.test.ts`, which mocks `api/client`
+one level lower on purpose to see the request bodies, and the chart components, which render a stub —
+which is why the builders are tested separately.
 
 ## Docker and deployment
 

@@ -34,6 +34,19 @@ export function useDashboardSummary(): Resource<DashboardSummary> {
 }
 
 /**
+ * The usernames the transfer form offers as recipient suggestions.
+ *
+ * There is no "list all users" endpoint, and the dashboard does not need one: `GET /users/top` already
+ * returns usernames, so the suggestions cost one request and no API change. Typing a name that is not
+ * in the list still works — this is a hint, not a whitelist.
+ */
+export function useTopUsernames(): string[] {
+  const loader = useCallback(() => fetchTopUsers(50), []);
+  const resource = useApiResource(loader, []);
+  return resource.data?.map((row) => row.username) ?? [];
+}
+
+/**
  * One page of the ledger for the current filters. The query object is serialised into the dependency
  * list, so changing a filter, the search term or the page triggers exactly one refetch.
  */

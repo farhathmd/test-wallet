@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
- * Page shell: brand, the signed-in wallet, and sign-out.
+ * Page shell: brand, the signed-in navigation, and sign-out.
  *
- * Layout is deliberately part of the app (not a UI library): the whole dashboard is one page, so a
- * header plus a content area is all the structure it needs.
+ * Layout is deliberately part of the app (not a UI library): a header plus a content area is all the
+ * structure it needs. The nav only appears for a signed-in user, because its links are guarded routes.
+ * `NavLink` marks the current one with `aria-current="page"`, so the active state needs no JS.
  */
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -29,6 +30,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <small>Crypto wallet API dashboard</small>
           </span>
         </Link>
+
+        {user ? (
+          <nav className="layout__nav" aria-label="Wallet">
+            <NavLink to="/" end>
+              Overview
+            </NavLink>
+            <NavLink to="/topup">Top up</NavLink>
+            <NavLink to="/transfer">Transfer</NavLink>
+          </nav>
+        ) : null}
 
         {user ? (
           <div className="layout__user">

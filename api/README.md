@@ -10,8 +10,8 @@ handling verifiable.
 - **Runtime:** Node.js ≥ 22.9 (developed on Node 24), CommonJS output
 - **Framework:** NestJS 12 (guards, pipes and the exception filter do the cross-cutting work)
 - **Database:** PostgreSQL 16 through Prisma 7 (`prisma-client` generator + `@prisma/adapter-pg`)
-- **Tests:** 156 tests — 106 unit tests (Jest, no database) and 50 integration tests (Jest + supertest
-  against real PostgreSQL), plus a 28-check smoke script
+- **Tests:** 165 tests — 111 unit tests (Jest, no database) and 54 integration tests (Jest + supertest
+  against real PostgreSQL), plus a 30-check smoke script
 
 ---
 
@@ -36,8 +36,9 @@ them with `npm run migrate` (`prisma migrate deploy`).
 Verify an installation (or a deployment) end to end:
 
 ```bash
-npm run smoke                                          # 28 checks against http://localhost:4000
+npm run smoke                                          # 30 checks against http://localhost:4000
 API_URL=https://api.example.com/api/v1 ADMIN_PASSWORD=... npm run smoke
+DASHBOARD_ORIGIN=https://wallet.example.com npm run smoke     # when the dashboard is not local
 ```
 
 ## Configuration
@@ -53,7 +54,7 @@ in the code. The API refuses to boot if a required variable is missing or obviou
 | `DB_POOL_MAX` | no | `10` | Connection pool ceiling |
 | `JWT_SECRET` | **yes** | – | Token signing key, **minimum 32 characters** (boot fails otherwise) |
 | `JWT_EXPIRES_IN` | no | `7d` | Token lifetime (any `jsonwebtoken` duration) |
-| `CORS_ORIGIN` | no | `http://localhost:5173` | Comma separated browser origins allowed to call the API (`*` for any) |
+| `CORS_ORIGIN` | no | `http://localhost:5173` | Comma separated browser origins allowed to call the API (`*` for any). Each spelling of a host is a separate origin — `localhost:5173` and `127.0.0.1:5173` must both be listed to serve the dashboard from either |
 | `ADMIN_USERNAME` | **yes** | – | Account seeded/refreshed on every boot |
 | `ADMIN_PASSWORD` | **yes** | – | Password for that account (stored only as a scrypt hash) |
 | `TEST_DATABASE_URL` | no | `postgres://localhost:5432/wallet_test` | Used by `npm run test:integration` |
@@ -366,9 +367,9 @@ error.
 ## Testing
 
 ```bash
-npm test                     # 106 unit tests — no database, ~3 s
-npm run test:integration     #  50 integration tests — real PostgreSQL
-npm run smoke                #  28 checks against a running server
+npm test                     # 111 unit tests — no database, ~2 s
+npm run test:integration     #  54 integration tests — real PostgreSQL
+npm run smoke                #  30 checks against a running server
 ```
 
 * **Unit tests** (`src/**/*.spec.ts`) run every domain rule and service path against in-memory
@@ -379,7 +380,10 @@ npm run smoke                #  28 checks against a running server
 * **Integration tests** (`test/*.e2e-spec.ts`) boot the real application — the same `createApp()` the
   server uses, with real guards, real filters and real Prisma — against a real database: the
   documented status codes, registration and login, the 10,000,000 boundary, ledger/balance
-  consistency, search, filters, pagination, the admin view and the concurrency proofs above. The
+  consistency, search, filters, pagination, the admin view, the concurrency proofs above and the CORS
+  policy a browser needs (`test/cors.e2e-spec.ts`: a configured origin is echoed by name, an unlisted
+  one gets no header — a direct call never exercises this, which is how a dashboard origin the API
+  refuses can pass every other test). The
   `wallet_test` database is created and migrated automatically (`test/global-setup.ts`); point
   `TEST_DATABASE_URL` elsewhere when needed. `DATABASE_URL` is overridden for the run, so the suite can
   never touch a development database.

@@ -59,12 +59,22 @@ export async function startServer(): Promise<INestApplication> {
 
 /**
  * `CORS_ORIGIN` is documented as a comma separated list, with `*` meaning "any origin".
- * @returns what `enableCors` expects: one origin, a list of them, or `*`
+ *
+ * Always a list — never a single origin as a bare string. Handed a string, the `cors` middleware
+ * writes it to `Access-Control-Allow-Origin` without comparing it against the request's `Origin`, so
+ * an API configured for one origin answers *every* origin with a header naming ours. A browser then
+ * rejects that response (the header must name the origin that asked), which looks like a broken
+ * dashboard rather than a misconfiguration, and a `curl` check cannot see it. A list makes the
+ * middleware compare and echo only a match, so an unlisted origin gets no CORS header at all.
+ *
+ * @returns what `enableCors` expects: a list of origins, or `*`
  */
-function parseCorsOrigins(value: string): string | string[] {
+export function parseCorsOrigins(value: string): '*' | string[] {
   const origins = value
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin !== '');
-  return origins.length === 1 ? origins[0] : origins;
+  // `*` wins wherever it appears: appending an origin to a `*` value must not silently become a list
+  // that matches neither (`cors` compares list entries literally, and a literal `*` never matches).
+  return origins.includes('*') ? '*' : origins;
 }
