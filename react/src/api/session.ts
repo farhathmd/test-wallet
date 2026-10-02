@@ -1,7 +1,7 @@
 import type { Session } from './types';
 
 /**
- * Session storage — the only module that touches localStorage.
+ * Session storage — the one place that reads and writes the session in localStorage.
  *
  * The token lives here (and not only in React state) so the Axios interceptor can read it without
  * depending on a component, and so a page reload keeps the user signed in. When the API rejects a

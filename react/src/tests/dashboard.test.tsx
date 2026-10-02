@@ -147,6 +147,12 @@ describe('dashboard', () => {
     expect(screen.getByText('1–2 of 3')).toBeInTheDocument();
   });
 
+  it('keeps the theme toggle in the header of the signed-in shell', async () => {
+    renderDashboard();
+
+    expect(await screen.findByRole('button', { name: /dark mode/i })).toBeInTheDocument();
+  });
+
   it('requests the next page when the user pages forward', async () => {
     const user = userEvent.setup();
     fetchTransactions.mockResolvedValueOnce(PAGE_ONE).mockResolvedValue(PAGE_TWO);

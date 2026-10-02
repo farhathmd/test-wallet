@@ -5,17 +5,53 @@
 :root {
   --bg: #f4f6fb;
   --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --field-bg: #ffffff;
   --border: #e2e8f0;
   --text: #0f172a;
   --text-muted: #64748b;
   --accent: #4338ca;
   --accent-soft: #eef2ff;
+  --on-accent: #ffffff;
   --credit: #15803d;
   --credit-soft: #ecfdf3;
   --debit: #b91c1c;
   --debit-soft: #fef2f2;
+  --danger-border: #fecaca;
+  --danger-text: #7f1d1d;
+  --success-border: #bbf7d0;
+  --success-text: #14532d;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  /* Tells the browser to draw its own widgets (scrollbars, native controls) for this theme. */
+  color-scheme: light;
+}
+
+/* Dark theme: the same variable names, re-pointed. Components never switch on the theme themselves —
+   they only ever read the variables — so the whole palette changes here and nowhere else.
+   `--accent` becomes a light indigo because it also colours links on dark surfaces, and `--on-accent`
+   flips to a dark text so anything filled with the accent keeps its contrast. */
+:root[data-theme='dark'] {
+  --bg: #0b1120;
+  --surface: #111c33;
+  --surface-muted: #17233d;
+  --field-bg: #0f1a2f;
+  --border: #27354f;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #a5b4fc;
+  --accent-soft: #1e2749;
+  --on-accent: #0b1120;
+  --credit: #4ade80;
+  --credit-soft: #12301f;
+  --debit: #f87171;
+  --debit-soft: #3a1a1a;
+  --danger-border: #7f2020;
+  --danger-text: #fca5a5;
+  --success-border: #14532d;
+  --success-text: #86efac;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }
 
 * {
@@ -153,7 +189,7 @@ code {
   height: 36px;
   border-radius: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 1.1rem;
 }
 
@@ -287,7 +323,7 @@ select {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: #fff;
+  background: var(--field-bg);
   color: var(--text);
   min-width: 0;
 }
@@ -345,7 +381,7 @@ button:disabled {
 }
 
 .table thead th {
-  background: #f8fafc;
+  background: var(--surface-muted);
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -378,18 +414,18 @@ button:disabled {
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
   font-size: 0.75rem;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .badge--topup {
   background: var(--accent-soft);
-  color: #4338ca;
+  color: var(--accent);
 }
 
 .badge--transfer {
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 .badge--role-admin {
@@ -398,8 +434,8 @@ button:disabled {
 }
 
 .badge--role-user {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--surface-muted);
+  color: var(--text-muted);
 }
 
 .direction {
@@ -461,8 +497,8 @@ button:disabled {
 .state--error {
   justify-content: space-between;
   background: var(--debit-soft);
-  border: 1px solid #fecaca;
-  color: #7f1d1d;
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
 }
 
 .state--error p {
@@ -473,8 +509,8 @@ button:disabled {
 .state--success {
   justify-content: space-between;
   background: var(--credit-soft);
-  border: 1px solid #bbf7d0;
-  color: #14532d;
+  border: 1px solid var(--success-border);
+  color: var(--success-text);
 }
 
 .spinner {
@@ -499,10 +535,19 @@ button:disabled {
 }
 
 .login {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.5rem;
+}
+
+/* The only chrome on the signed-out screens: the theme switch, pinned to the corner so it never
+   competes with the centred card. */
+.login__theme {
+  position: absolute;
+  top: 1.25rem;
+  inset-inline-end: 1.25rem;
 }
 
 .login__card {
@@ -531,9 +576,9 @@ button:disabled {
   margin: 0;
   padding: 0.6rem 0.75rem;
   background: var(--debit-soft);
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger-border);
   border-radius: 9px;
-  color: #7f1d1d;
+  color: var(--danger-text);
   font-size: 0.88rem;
 }
 
@@ -561,11 +606,11 @@ button:disabled {
 
 .button--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .button--ghost {
-  background: #fff;
+  background: var(--surface);
   border-color: var(--border);
   color: var(--text);
 }
@@ -573,6 +618,13 @@ button:disabled {
 .button--ghost:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* One glyph, so it needs less side padding than a word button. */
+.theme-toggle {
+  padding: 0.5rem 0.7rem;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .brand__mark--large {

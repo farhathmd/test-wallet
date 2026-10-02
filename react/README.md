@@ -33,7 +33,7 @@ Sign in with the credentials the API seeded: `ADMIN_USERNAME` / `ADMIN_PASSWORD`
 | `npm run dev` | Vite dev server on 5173 (strict port, so the API's CORS origin always matches) |
 | `npm run build` | Type check (`tsc --noEmit`) then production bundle into `dist/` |
 | `npm run preview` | Serves the built bundle on 4173 |
-| `npm test` | Vitest run — 19 tests |
+| `npm test` | Vitest run — 49 tests |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run typecheck` | Types only |
 
@@ -92,6 +92,12 @@ Because `/topup` and `/transfer` are their own routes, the overview unmounts whi
 refetches the balance and the ledger when you come back — there is no shared cache to invalidate after a
 write.
 
+**Dark / light theme** — a toggle sits in the header of every signed-in screen and in the corner of
+`/login` and `/register`. It sets `data-theme` on `<html>` and remembers the choice as `wallet.theme`;
+with nothing stored yet it starts from the OS `prefers-color-scheme`. The entire palette is declared in
+`styles.css`, so no component branches on the theme — the one exception is the charts, whose canvas
+cannot read a CSS variable and takes its colours from a per-theme palette in `charts/options.ts`.
+
 ### How the sign is shown
 
 `GET /transactions/top` returns **signed** amounts (debits negative), while `GET /transactions`
@@ -105,15 +111,18 @@ react/
 ├── src/
 │   ├── api/            client (Axios + interceptors), session storage, typed API calls and types
 │   │   ├── client.ts       attaches the token, converts every failure into an ApiError
-│   │   ├── session.ts      the only module that touches localStorage
+│   │   ├── session.ts      the session in localStorage (the theme keeps its own key)
 │   │   ├── auth.api.ts     POST /login, POST /register
 │   │   └── wallet.api.ts   balance, rankings, the paginated ledger, POST /topup, POST /transfer
 │   ├── charts/         register.ts (tree-shaken Chart.js) + options.ts (pure data/option builders)
-│   ├── components/     small, single-purpose presentational pieces (table, cards, filters, charts)
-│   ├── context/        AuthContext: session state, login, register, logout, auto sign-out on 401
+│   ├── components/     small, single-purpose presentational pieces (table, cards, filters, charts, toggle)
+│   ├── context/        AuthContext (session, login, register, logout, auto sign-out on 401),
+│   │                   ThemeContext (dark/light, persisted, applied to <html>)
 │   ├── hooks/          useApiResource, useDebouncedValue, useWalletData, useFormSubmit
 │   ├── pages/          LoginPage, RegisterPage, DashboardPage, TopupPage, TransferPage, NotFoundPage
-│   ├── tests/          setup + format-and-charts, wallet-api, login, register, wallet-actions, dashboard
+│   ├── tests/          setup + format-and-charts, wallet-api, login, register, wallet-actions,
+│   │                   dashboard, theme
+│   ├── theme/theme.ts  the only module that touches the theme in localStorage
 │   └── utils/format.ts pure currency/date/label formatting
 └── vite.config.ts      Vite + Vitest configuration
 ```
@@ -160,6 +169,12 @@ Rules the codebase follows:
 * **Charts are data + options builders, not components.** The interesting logic (colours by direction,
   absolute bars for mixed signs, index axes) is testable without a canvas; tests mock
   `react-chartjs-2` and assert the data that reaches each chart.
+* **The theme is one attribute, not a class per element.** `ThemeContext` writes `data-theme` on
+  `<html>` in a *layout* effect (so React has painted nothing yet and a dark-mode visitor never sees a
+  light flash), and `styles.css` re-points the same variables under `[data-theme='dark']`. Only an
+  explicit toggle is persisted, which leaves `prefers-color-scheme` free to seed the next visit until
+  someone chooses. The cost is that Chart.js cannot read a CSS variable, hence the small palette passed
+  into the chart builders and options.
 * **Amounts are parsed once, at the HTTP boundary.** The API's DTO requires a JSON *number* and answers
   `"amount" must be a finite number.` for the string `"250.00"` — a mismatch that only a request against
   a live API exposes, so `wallet.api.ts` parses the typed text with `toAmount` and the pages pass the
@@ -170,9 +185,9 @@ Rules the codebase follows:
   anything, so both money screens call `GET /balance` after a successful write and show the figure the
   API reports — which is also the only way to know it.
 * **Known limitations:** the bundle is ~166 kB gzipped, mostly Chart.js — lazy-loading the charts
-  (dynamic `import()`) is the obvious next optimisation if first paint matters; the dashboard has no
-  dark mode; there is no route-level code splitting (the screens are small and the charts dominate the
-  bundle anyway); `/register` is open to anyone who can reach the API (the API has no rate limiting or
+  (dynamic `import()`) is the obvious next optimisation if first paint matters; there is no route-level
+  code splitting (the screens are small and the charts dominate the bundle anyway); `/register` is open
+  to anyone who can reach the API (the API has no rate limiting or
   CAPTCHA — locking registration down, or moving it behind an admin route, is a server-side decision);
   the transfer recipient suggestions come from the top-50 users, so a name outside that list must be
   typed in full.
@@ -180,17 +195,18 @@ Rules the codebase follows:
 ## Testing
 
 ```bash
-npm test          # 40 tests, ~6 s
+npm test          # 49 tests, ~7 s
 ```
 
 | Suite | Covers |
 | --- | --- |
-| `src/tests/format-and-charts.test.ts` | money/date/label formatting, page descriptions, chart builders (signed → absolute values, colours, empty data) |
+| `src/tests/format-and-charts.test.ts` | money/date/label formatting, page descriptions, chart builders (signed → absolute values, colours, the dark palette, empty data) |
 | `src/tests/wallet-api.test.ts` | the HTTP boundary itself: the request bodies (`{"amount":250}`, not `"250.00"`; `to_username`), the amount parse including blank and non-numeric input, the `limit` used for the suggestion list |
-| `src/tests/login.test.tsx` | login through the real router and auth context: validation, error message, session persistence, redirect for an existing session |
+| `src/tests/login.test.tsx` | login through the real router and auth context: validation, error message, session persistence, redirect for an existing session, and the theme toggle being reachable before there is a session |
 | `src/tests/register.test.tsx` | sign-up: empty fields send nothing, a 201 stores the session and lands on the overview, a 409 stays on the form with the API's message, the link from `/login`, and the redirect for a signed-in visitor |
 | `src/tests/wallet-actions.test.tsx` | top-up and transfer: the exact request body (`to_username` included), no request for an empty form, the API's message for a rejected amount / low balance, the balance read after the 204, recipient suggestions excluding yourself, the header links, and the guard on a direct visit without a session |
-| `src/tests/dashboard.test.tsx` | cards, table rendering (including the derived sign), paging, debounced search, admin-only filter, empty and error states with retry |
+| `src/tests/dashboard.test.tsx` | cards, table rendering (including the derived sign), paging, debounced search, admin-only filter, the header theme toggle, empty and error states with retry |
+| `src/tests/theme.test.tsx` | the initial theme (stored → OS preference → light), a bad stored value, and that the toggle updates `<html data-theme>` and `wallet.theme` |
 
 Only `api/auth.api` and `api/wallet.api` are mocked, so the screen tests exercise the code we wrote:
 components, hooks, context, routing. The exceptions are `wallet-api.test.ts`, which mocks `api/client`

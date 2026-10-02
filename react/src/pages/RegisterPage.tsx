@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import type { ApiUser } from '../api/types';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../context/AuthContext';
 import { useFormSubmit } from '../hooks/useFormSubmit';
 
@@ -43,6 +44,10 @@ export function RegisterPage() {
 
   return (
     <div className="login">
+      <div className="login__theme">
+        <ThemeToggle />
+      </div>
+
       <section className="card login__card">
         <header className="login__header">
           <span className="brand__mark brand__mark--large" aria-hidden="true">

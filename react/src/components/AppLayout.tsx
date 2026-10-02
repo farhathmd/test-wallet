@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ThemeToggle } from './ThemeToggle';
 
 /**
- * Page shell: brand, the signed-in navigation, and sign-out.
+ * Page shell: brand, the signed-in navigation, the theme toggle and sign-out.
  *
  * Layout is deliberately part of the app (not a UI library): a header plus a content area is all the
  * structure it needs. The nav only appears for a signed-in user, because its links are guarded routes.
- * `NavLink` marks the current one with `aria-current="page"`, so the active state needs no JS.
+ * `NavLink` marks the current one with `aria-current="page"`, so the active state needs no JS. The theme
+ * toggle sits outside both signed-in blocks, so it is present on the 404 page too.
  */
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -40,6 +42,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <NavLink to="/transfer">Transfer</NavLink>
           </nav>
         ) : null}
+
+        <ThemeToggle />
 
         {user ? (
           <div className="layout__user">

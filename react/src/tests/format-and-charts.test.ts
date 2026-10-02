@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TopTransaction, TopUser, TransactionSummary } from '../api/types';
 import {
+  CHART_PALETTES,
   DEBIT_COLOR,
   CREDIT_COLOR,
   buildCreditDebitData,
@@ -32,6 +33,24 @@ describe('chart builders', () => {
 
     expect(data.labels).toEqual([]);
     expect(data.datasets[0].data).toEqual([]);
+  });
+
+  it('swaps the bar colours for the darker-on-dark palette', () => {
+    const rows: TopTransaction[] = [
+      { username: 'bob', amount: -200.25 },
+      { username: 'carol', amount: 50 },
+    ];
+    const dark = CHART_PALETTES.dark;
+
+    const bars = buildTopTransactionsData(rows, dark);
+    const doughnut = buildCreditDebitData(
+      { credit_total: 700, debit_total: 150, net: 550 },
+      dark,
+    );
+
+    expect(bars.datasets[0].backgroundColor).toEqual([dark.debit, dark.credit]);
+    expect(bars.datasets[0].backgroundColor).not.toEqual([DEBIT_COLOR, CREDIT_COLOR]);
+    expect(doughnut.datasets[0].backgroundColor).toEqual([dark.credit, dark.debit]);
   });
 
   it('maps the summary totals into money in / money out', () => {

@@ -111,6 +111,16 @@ describe('login', () => {
     expect(window.localStorage.getItem('wallet.session')).toBeNull();
   });
 
+  it('offers the theme toggle on the sign-in screen, before there is a session', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const toggle = screen.getByRole('button', { name: /dark mode/i });
+    await user.click(toggle);
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+  });
+
   it('redirects straight to the dashboard when a session already exists', async () => {
     window.localStorage.setItem(
       'wallet.session',

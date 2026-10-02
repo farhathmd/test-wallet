@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { toApiError } from '../api/client';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -47,6 +48,10 @@ export function LoginPage() {
 
   return (
     <div className="login">
+      <div className="login__theme">
+        <ThemeToggle />
+      </div>
+
       <section className="card login__card">
         <header className="login__header">
           <span className="brand__mark brand__mark--large" aria-hidden="true">
